@@ -14,6 +14,8 @@ const db = low(adapter);
 
 // Banco de dados para armazenar os bots cadastrados
 const bots = db.get('bots').value() || [];
+// Banco de dados para armazenar os logs
+const logs = db.get('logs').value() || [];
 
 // Função para mostrar o painel de interação
 function showPanel() {
@@ -21,9 +23,11 @@ function showPanel() {
   console.log(Fore.GREEN + '=============================');
   console.log(Fore.CYAN + '    DedSec Hospedador');
   console.log(Fore.GREEN + '=============================');
+
+  console.log(Fore.CYAN + `Número de Logs: ${logs.length}`);
   
   let option = readlineSync.keyInSelect(
-    ['Adicionar Bot', 'Ver meus Bots', 'Ligar Bots', 'Sair'],
+    ['Adicionar Bot', 'Ver meus Bots', 'Ligar Bots', 'Ver Logs', 'Sair'],
     'Escolha uma opção:'
   );
 
@@ -38,6 +42,9 @@ function showPanel() {
       startBots();
       break;
     case 3:
+      viewLogs();
+      break;
+    case 4:
       console.log('Saindo...');
       process.exit();
       break;
@@ -72,6 +79,9 @@ async function addBot() {
       bots.push(newBot);
       db.set('bots', bots).write();
 
+      // Log da adição
+      logAction(`Bot ${botName} adicionado com sucesso!`);
+
       console.log(Fore.GREEN + 'Bot adicionado com sucesso!');
       showPanel();
     });
@@ -98,6 +108,9 @@ function viewBots() {
     } else {
       bots.splice(botIndex, 1);
       db.set('bots', bots).write();
+
+      // Log da exclusão
+      logAction(`Bot ${botName} excluído com sucesso!`);
       console.log(Fore.GREEN + 'Bot excluído com sucesso!');
     }
   }
@@ -135,6 +148,9 @@ function startBot(bot) {
     console.log(Fore.GREEN + `Iniciando bot ${bot.name}...`);
     require(botFile);
     console.log(Fore.GREEN + `${bot.name} está online!`);
+
+    // Log da ativação
+    logAction(`Bot ${bot.name} iniciado com sucesso!`);
   } else {
     console.log(Fore.RED + 'Arquivo bot.js não encontrado dentro da pasta do bot.');
   }
@@ -170,6 +186,27 @@ function extractZip(zipPath, destination, callback) {
     .on('error', (err) => {
       console.log(Fore.RED + 'Erro ao extrair o arquivo .zip:', err.message);
     });
+}
+
+// Função para visualizar os logs
+function viewLogs() {
+  console.clear();
+  if (logs.length === 0) {
+    console.log(Fore.RED + 'Nenhum log encontrado.');
+  } else {
+    console.log(Fore.CYAN + 'Logs de Ações:');
+    logs.forEach((log, index) => {
+      console.log(`${index + 1}. ${log}`);
+    });
+  }
+  showPanel();
+}
+
+// Função para registrar uma ação no log
+function logAction(message) {
+  const timestamp = new Date().toISOString();
+  logs.push(`${timestamp} - ${message}`);
+  db.set('logs', logs).write();
 }
 
 // Chamada inicial do painel

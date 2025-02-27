@@ -6,7 +6,7 @@ const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 const readlineSync = require('readline-sync');
 const { Fore, Back, Style } = require('colorama');
-const axios = require('axios');
+const https = require('https');
 
 // Configuração do banco de dados
 const adapter = new FileSync('database.json');
@@ -14,8 +14,7 @@ const db = low(adapter);
 
 // Banco de dados para armazenar os bots cadastrados
 const bots = db.get('bots').value() || [];
-// Banco de dados para armazenar os logs
-const logs = db.get('logs').value() || [];
+const logs = [];
 
 // Função para mostrar o painel de interação
 function showPanel() {
@@ -23,8 +22,6 @@ function showPanel() {
   console.log(Fore.GREEN + '=============================');
   console.log(Fore.CYAN + '    DedSec Hospedador');
   console.log(Fore.GREEN + '=============================');
-
-  console.log(Fore.CYAN + `Número de Logs: ${logs.length}`);
   
   let option = readlineSync.keyInSelect(
     ['Adicionar Bot', 'Ver meus Bots', 'Ligar Bots', 'Ver Logs', 'Sair'],
@@ -55,32 +52,28 @@ function showPanel() {
 }
 
 // Função para adicionar um bot
-async function addBot() {
+function addBot() {
   console.clear();
   console.log(Fore.YELLOW + 'Adicionando Bot...');
 
   const botName = readlineSync.question('Nome do bot: ');
   const botFileLink = readlineSync.question('Link do arquivo .zip do bot (Google Drive link): ');
 
-  // Caminho para onde o arquivo será salvo
-  const botFolderPath = path.join(__dirname, botName);
-  const botZipPath = botFolderPath + '.zip';
-
   // Baixar o arquivo .zip do Google Drive
-  await downloadFileFromGoogleDrive(botFileLink, botZipPath, () => {
+  const botFolderPath = path.join(__dirname, botName);
+  downloadFile(botFileLink, botFolderPath + '.zip', () => {
     console.log(Fore.YELLOW + 'Arquivo .zip recebido! Extraindo...');
-
+    
     // Extrair os arquivos do .zip
-    extractZip(botZipPath, botFolderPath, () => {
+    extractZip(botFolderPath + '.zip', botFolderPath, () => {
       console.log(Fore.GREEN + 'Arquivos extraídos com sucesso!');
 
       // Adicionar bot à lista de bots
       const newBot = { name: botName, folder: botFolderPath };
       bots.push(newBot);
       db.set('bots', bots).write();
-
-      // Log da adição
-      logAction(`Bot ${botName} adicionado com sucesso!`);
+      logs.push(`Bot ${botName} adicionado com sucesso.`);
+      db.set('logs', logs).write();
 
       console.log(Fore.GREEN + 'Bot adicionado com sucesso!');
       showPanel();
@@ -108,9 +101,8 @@ function viewBots() {
     } else {
       bots.splice(botIndex, 1);
       db.set('bots', bots).write();
-
-      // Log da exclusão
-      logAction(`Bot ${botName} excluído com sucesso!`);
+      logs.push(`Bot ${botName} excluído.`);
+      db.set('logs', logs).write();
       console.log(Fore.GREEN + 'Bot excluído com sucesso!');
     }
   }
@@ -134,6 +126,8 @@ function startBots() {
   } else {
     console.log(Fore.YELLOW + `Ligando o bot: ${botName}...`);
     startBot(bot);
+    logs.push(`Bot ${botName} iniciado.`);
+    db.set('logs', logs).write();
   }
 
   showPanel();
@@ -148,31 +142,23 @@ function startBot(bot) {
     console.log(Fore.GREEN + `Iniciando bot ${bot.name}...`);
     require(botFile);
     console.log(Fore.GREEN + `${bot.name} está online!`);
-
-    // Log da ativação
-    logAction(`Bot ${bot.name} iniciado com sucesso!`);
   } else {
     console.log(Fore.RED + 'Arquivo bot.js não encontrado dentro da pasta do bot.');
   }
 }
 
-// Função para fazer o download do arquivo .zip do Google Drive
-async function downloadFileFromGoogleDrive(url, destination, callback) {
-  try {
-    const response = await axios({
-      method: 'get',
-      url: url,
-      responseType: 'stream',
-    });
-
-    const file = fs.createWriteStream(destination);
-    response.data.pipe(file);
+// Função para fazer o download do arquivo .zip do bot
+function downloadFile(url, destination, callback) {
+  const file = fs.createWriteStream(destination);
+  https.get(url, (response) => {
+    response.pipe(file);
     file.on('finish', () => {
       file.close(callback);
     });
-  } catch (error) {
-    console.error('Erro ao baixar arquivo:', error.message);
-  }
+  }).on('error', (err) => {
+    fs.unlink(destination);
+    console.log(Fore.RED + 'Erro ao baixar o arquivo:', err.message);
+  });
 }
 
 // Função para extrair o arquivo .zip
@@ -193,20 +179,13 @@ function viewLogs() {
   console.clear();
   if (logs.length === 0) {
     console.log(Fore.RED + 'Nenhum log encontrado.');
-  } else {
-    console.log(Fore.CYAN + 'Logs de Ações:');
-    logs.forEach((log, index) => {
-      console.log(`${index + 1}. ${log}`);
-    });
+    showPanel();
+    return;
   }
-  showPanel();
-}
 
-// Função para registrar uma ação no log
-function logAction(message) {
-  const timestamp = new Date().toISOString();
-  logs.push(`${timestamp} - ${message}`);
-  db.set('logs', logs).write();
+  console.log(Fore.CYAN + 'Logs recentes:');
+  console.table(logs);
+  showPanel();
 }
 
 // Chamada inicial do painel
